@@ -49,10 +49,16 @@ def get_ai_insights(user_context: str, question: str = "Please provide financial
         error_msg = str(e)
         print(f"Gemini API Error: {error_msg}")
         
-        # HACKATHON PRESENTATION MODE
-        # If Google rejects our token (e.g. 429 Resource Exhausted), 
-        # intercept the error and return a smartly formatted local mock response 
-        # based on the injected SQLite context so the demo never fails on stage.
+        # SPECIFIC ERROR HANDLING FOR DEPLOYMENT/QUOTAS
+        if "API_KEY_INVALID" in error_msg:
+            return (
+                "⚠️ **Configuration Error:** The Gemini API Key is invalid or missing on the server. \n\n"
+                "**To fix this on Render:** \n"
+                "1. Go to your Render Dashboard -> Environment. \n"
+                "2. Add `GEMINI_API_KEY` as a variable with your valid Google API key. \n"
+                "3. Redeploy the service."
+            )
+            
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
             q_lower = question.lower()
             
@@ -85,12 +91,11 @@ def get_ai_insights(user_context: str, question: str = "Please provide financial
                     "Securing these can cover your books for the whole year!"
                 )
             else:
-                # Default "Can I buy X" response
+                # Default "Quota Reached" response
                 safe_response = (
-                    f"🧐 **My Analysis:** You're asking about '{question}'. \n\n"
-                    f"✅ Your Wallet Balance is ₹2,500. While you *can* afford it, "
-                    "I suggest waiting 24 hours before buying. If you still want it then, go for it! "
-                    "This is the first rule of **Responsible Consumption** (SDG-12)."
+                    "🚀 **Daily Insight Limit Reached:** \n\n"
+                    "You've been remarkably proactive today! My advanced brain needs a quick rest. "
+                    "I'll be back in full force in a few hours. Keep up the great budgeting!"
                 )
             
             return safe_response
