@@ -1,5 +1,5 @@
 const IS_LOCAL = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-const API_URL = IS_LOCAL ? 'http://127.0.0.1:8000' : 'https://finzen-ty46.onrender.com';
+const API_URL = IS_LOCAL ? window.location.origin : 'https://finzen-ty46.onrender.com';
 
 const api = {
     // Current user token

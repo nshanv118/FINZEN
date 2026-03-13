@@ -25,9 +25,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.responses import RedirectResponse
+
 @app.get("/")
-def read_root():
-    return {"message": "Welcome to the Student Budget AI API"}
+async def root():
+    """Redirects the root URL to the FinZen UI."""
+    return RedirectResponse(url="/static/index.html")
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "app": "FinZen"}
 
 from routes import auth, wallet, budget, ai_support, offers
 

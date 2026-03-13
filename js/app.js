@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await api.login(phone, password);
             api.setToken(res.access_token);
             localStorage.setItem('budgetai_user', JSON.stringify(res.user));
-            document.getElementById('user-greeting').textContent = `Hi, ${res.user.name.split(' ')[0]} 👋`;
+            document.getElementById('user-greeting').textContent = `Hello ${res.user.name.split(' ')[0]} 👋`;
             showScreen('main-layout');
             loadDashboard();
         } catch (error) {
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await api.login(phone, password);
             api.setToken(res.access_token);
             localStorage.setItem('budgetai_user', JSON.stringify(res.user));
-            document.getElementById('user-greeting').textContent = `Hi, ${res.user.name.split(' ')[0]} 👋`;
+            document.getElementById('user-greeting').textContent = `Hello ${res.user.name.split(' ')[0]} 👋`;
             showScreen('main-layout');
             loadDashboard();
         } catch (error) {
@@ -80,106 +80,191 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
-            // Update active state
+            const target = e.currentTarget.getAttribute('data-target');
+            if (currentTab === target) return;
+
+            // Update active nav state
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             e.currentTarget.classList.add('active');
             
-            // Switch tab content
-            const target = e.currentTarget.getAttribute('data-target');
-            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
-            document.getElementById(target).style.display = 'block';
+            // Switch tab content with clean visibility
+            document.querySelectorAll('.tab-content').forEach(t => {
+                t.style.display = 'none';
+                t.classList.remove('active');
+            });
+
+            const content = document.getElementById(target);
+            content.style.display = 'block';
+            content.classList.add('active');
             currentTab = target;
 
             // Load data based on tab
             if (target === 'tab-pay') loadDashboard();
             if (target === 'tab-budget') loadBudgetTab();
-            if (target === 'tab-offers') loadOffersTab();
+            if (target === 'tab-offers') loadOffersAndDeals();
             if (target === 'tab-opportunities') loadOpportunitiesTab();
         });
     });
 
-    // --- PAY Tab Actions --- //
-    document.getElementById('btn-receive').addEventListener('click', showReceiveModal);
-    document.getElementById('btn-scan').addEventListener('click', showScanModal);
-    document.getElementById('btn-send').addEventListener('click', showSendModal);
-    document.getElementById('btn-savings').addEventListener('click', showSavingsModal);
-    document.getElementById('modal-close').addEventListener('click', hideModal);
+    // --- Action Listeners --- //
+    const safeAddListener = (id, event, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(event, handler);
+    };
 
-    // --- BUDGET Tab Actions --- //
-    // Manual expenses removed per dynamic requirement.
+    safeAddListener('btn-scan', 'click', showScanModal);
+    safeAddListener('btn-send', 'click', showSendModal);
+    safeAddListener('btn-pay-action', 'click', showSendModal);
+    safeAddListener('btn-add', 'click', showSendModal); // Assuming add money uses similar modal
+    safeAddListener('btn-receive', 'click', showReceiveModal);
+    safeAddListener('btn-savings', 'click', showSavingsModal);
+    safeAddListener('modal-close', 'click', hideModal);
 
+    // Modern Chatbot Logic
+    const chatbotFab = document.getElementById('chatbot-fab');
+    const aiChatWindow = document.getElementById('ai-chat-window');
+    const closeChatBtn = document.getElementById('close-chat');
+    const sendChatBtn = document.getElementById('send-chat');
+    const chatInputField = document.getElementById('chat-input');
 
-    document.getElementById('chatbot-fab').addEventListener('click', showAIModal);
+    if (chatbotFab && aiChatWindow) {
+        console.log("Chatbot FAB initialized. Window found:", !!aiChatWindow);
+        chatbotFab.onclick = (e) => {
+            console.log("FAB Clicked (direct handler), toggling active class");
+            aiChatWindow.classList.toggle('active');
+            if (aiChatWindow.classList.contains('active')) {
+                chatInputField.focus();
+            }
+        };
+    }
+
+    if (closeChatBtn) {
+        closeChatBtn.addEventListener('click', () => {
+            aiChatWindow.classList.remove('active');
+        });
+    }
+
+    if (sendChatBtn) {
+        sendChatBtn.addEventListener('click', () => {
+            console.log("Send button clicked");
+            handleModernAIChat();
+        });
+    }
+
+    if (chatInputField) {
+        chatInputField.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleModernAIChat();
+        });
+    }
 });
 
 // --- UI Helpers --- //
+
+/**
+ * Switch between main application screens (e.g., auth-section vs main-layout)
+ */
 function showScreen(screenId) {
-    document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
-    document.getElementById(screenId).style.display = 'flex';
-}
-
-function formatMoney(amount) {
-    return '₹' + parseFloat(amount).toFixed(2);
-}
-
-function formatDate(dateString) {
-    const d = new Date(dateString);
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-}
-
-function cleanUPIName(name) {
-    if (!name) return "Payment";
-    let text = name;
-    if (text.toLowerCase().includes("upi://")) {
-        try {
-            const match = text.match(/(upi:\/\/[^\s]+)/i);
-            if (match) {
-                const urlStr = match[1];
-                const url = new URL(urlStr);
-                const params = new URLSearchParams(url.search);
-                let clean = params.get('pn') || params.get('pa') || urlStr;
-                return text.replace(urlStr, clean.replace(/\+/g, ' '));
-            }
-        } catch(e) {}
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const target = document.getElementById(screenId);
+    if (target) {
+        target.classList.add('active');
     }
-    return text;
 }
 
-// --- Data Loading Functions --- //
+/**
+ * Utility: Format amount as Indian Currency
+ */
+function formatMoney(amount) {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2
+    }).format(amount);
+}
 
-async function loadDashboard() {
+/**
+ * Utility: Format ISO timestamp to readable date/time
+ */
+function formatDate(isoString) {
+    if (!isoString) return 'Recent';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-IN', { 
+        day: 'numeric', 
+        month: 'short', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+}
+
+/**
+ * Utility: Clean up messy UPI names/IDs for display
+ */
+function cleanUPIName(name) {
+    if (!name) return 'Unknown Party';
+    // Remove typical UPI artifacts
+    let clean = name.split('@')[0];
+    clean = clean.replace(/[0-9]{10}/, ''); // Remove phone numbers
+    clean = clean.replace(/[^a-zA-Z\s]/g, ' '); // Remove special characters
+    return clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ').trim() || name;
+}
+
+/**
+ * Unified UI State Sync
+ * Syncs the wallet balance and transaction history in real-time.
+ */
+async function updateUIState() {
     try {
         const [wallet, transactions] = await Promise.all([
             api.getWallet(),
             api.getTransactions()
         ]);
 
-        document.getElementById('wallet-balance').textContent = formatMoney(wallet.wallet_balance);
-        document.getElementById('savings-balance').textContent = formatMoney(wallet.savings_balance);
+        // Sync Balance
+        const balEl = document.getElementById('wallet-balance');
+        const savEl = document.getElementById('savings-balance');
+        if (balEl) balEl.textContent = formatMoney(wallet.wallet_balance);
+        if (savEl) savEl.textContent = formatMoney(wallet.savings_balance);
 
+        // Sync Dashboard Transactions
         const txList = document.getElementById('tx-history');
-        if (transactions.length === 0) {
-            txList.innerHTML = '<li class="list-item empty-state">No recent transactions</li>';
-        } else {
-            txList.innerHTML = transactions.map(tx => {
-                const isSend = tx.type.includes('payment') || tx.type === 'savings_deposit' || tx.type === 'savings_transfer' || tx.type === 'send';
-                const sign = isSend ? '-' : '+';
-                const colorClass = isSend ? 'tx-send' : 'tx-receive';
-                const displayName = cleanUPIName(tx.receiver);
-                return `
-                    <li class="list-item">
-                        <div class="tx-info" style="min-width: 0; flex: 1; padding-right: 15px;">
-                            <h4 style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;">${displayName}</h4>
-                            <p>${formatDate(tx.timestamp)}</p>
+        if (txList) {
+            if (transactions.length === 0) {
+                txList.innerHTML = '<div class="empty-state">No recent activity</div>';
+            } else {
+                txList.innerHTML = transactions.slice(0, 10).map(tx => {
+                    const isSend = tx.type.includes('payment') || tx.type.includes('send') || tx.type.includes('deposit') || tx.type.includes('transfer_out');
+                    const sign = isSend ? '-' : '+';
+                    const colorClass = isSend ? 'debit' : 'credit';
+                    const icon = isSend ? '💸' : '💰';
+                    return `
+                        <div class="tx-item">
+                            <div class="tx-icon">${icon}</div>
+                            <div class="tx-details">
+                                <h4>${cleanUPIName(tx.receiver || tx.sender)}</h4>
+                                <p>${formatDate(tx.timestamp)}</p>
+                            </div>
+                            <div class="tx-amount ${colorClass}">${sign}${formatMoney(tx.amount)}</div>
                         </div>
-                        <div class="tx-amount ${colorClass}" style="white-space: nowrap;">${sign}${formatMoney(tx.amount)}</div>
-                    </li>
-                `;
-            }).join('');
+                    `;
+                }).join('');
+            }
         }
-    } catch (error) {
-        console.error("Dashboard Load Error", error);
+    } catch (e) {
+        console.error("State Sync Failed:", e);
     }
+}
+
+// --- Data Loading Functions --- //
+
+async function loadDashboard() {
+    await updateUIState();
+    // Load top AI insight
+    try {
+        const insights = await api.getAIInsights();
+        if (insights && insights.length > 0) {
+            document.getElementById('ai-top-insight').textContent = insights[0].text;
+        }
+    } catch(e) {}
 }
 
 async function loadBudgetTab() {
@@ -208,88 +293,153 @@ async function loadBudgetTab() {
         }
 
         // Update Monthly Total
-        document.getElementById('monthly-total').innerText = `₹${parseFloat(analytics.monthly_total).toFixed(2)}`;
+        const monthlyTotalEl = document.getElementById('monthly-total');
+        if (monthlyTotalEl) monthlyTotalEl.innerText = `₹${parseFloat(analytics.monthly_total).toFixed(2)}`;
         
-        // Update Category Percentages
-        const catList = document.getElementById('category-percentages');
-        if (analytics.category_distribution.length === 0) {
-            catList.innerHTML = '<li class="list-item empty-state">No categories found this month</li>';
-        } else {
-            catList.innerHTML = analytics.category_distribution.map(cat => `
-                <li class="list-item" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-weight: 600;">${cat.category}</span>
-                    <span style="color:var(--text-main); font-weight:700;">${cat.percentage}% <span style="font-size:12px; color:var(--text-muted); font-weight:normal; margin-left:5px;">(₹${cat.amount.toFixed(2)})</span></span>
-                </li>
-            `).join('');
-        }
+        // Update Budget Progress
+        const limit = 5000;
+        const total = parseFloat(analytics.monthly_total);
+        const ratioText = `${formatMoney(total)} / ${formatMoney(limit)}`;
+        const percent = Math.min((total / limit) * 100, 100);
+        
+        const budgetRatioEl = document.getElementById('budget-ratio');
+        if (budgetRatioEl) budgetRatioEl.innerText = `Spent ${ratioText}`;
+        
+        const budgetFillEl = document.getElementById('budget-fill');
+        if (budgetFillEl) budgetFillEl.style.width = `${percent}%`;
 
-        // Render Bar Chart
-        renderChart(analytics.daily_spending.labels, analytics.daily_spending.values);
+        // Render Bar Chart (Monthly/Daily)
+        renderBarChart(analytics.daily_spending.labels, analytics.daily_spending.values);
+
+        // Render Pie Chart (Categories)
+        renderPieChart(analytics.category_distribution);
 
     } catch(error) {
         console.error("Budget Load Error", error);
     }
 }
 
-function renderChart(labels, data) {
-    const ctx = document.getElementById('expenseChart').getContext('2d');
-    
-    // Destroy previous instance to prevent overlapping
-    if (expenseChartInstance) {
-        expenseChartInstance.destroy();
-    }
+let barChartInstance = null;
+let pieChartInstance = null;
 
-    if (data.length === 0) return;
+function renderBarChart(labels, data) {
+    const ctx = document.getElementById('monthlyBarChart')?.getContext('2d');
+    if (!ctx) return;
 
-    expenseChartInstance = new Chart(ctx, {
+    if (barChartInstance) barChartInstance.destroy();
+
+    barChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
             datasets: [{
-                label: 'Daily Spending (₹)',
+                label: 'Spending',
                 data: data,
-                backgroundColor: '#4f46e5',
-                borderRadius: 4
+                backgroundColor: '#4F46E5',
+                borderRadius: 6,
+                barThickness: 20
             }]
         },
         options: {
             responsive: true,
-            scales: {
-                y: { beginAtZero: true }
-            },
+            maintainAspectRatio: false,
             plugins: {
-                legend: { display: false } // Hide legend for cleaner bar chart look
+                legend: { display: false }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+                x: { grid: { display: false }, ticks: { font: { size: 10 } } }
             }
         }
     });
 }
 
-async function loadOffersTab() {
-    const list = document.getElementById('offers-list');
+function renderPieChart(distribution) {
+    const ctx = document.getElementById('categoryPieChart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (pieChartInstance) pieChartInstance.destroy();
+
+    const labels = distribution.map(d => d.category);
+    const values = distribution.map(d => d.amount);
+
+    const colors = {
+        food: '#F59E0B',
+        transport: '#06B6D4',
+        shopping: '#A855F7',
+        entertainment: '#EF4444',
+        groceries: '#10B981',
+        education: '#4F46E5',
+        other: '#64748B'
+    };
+
+    pieChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: values,
+                backgroundColor: labels.map(l => colors[l.toLowerCase()] || '#E5E7EB'),
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: {
+                legend: { 
+                    position: 'right',
+                    labels: { 
+                        usePointStyle: true, 
+                        boxWidth: 6, 
+                        padding: 15,
+                        font: { family: 'Outfit', size: 11 } 
+                    } 
+                }
+            }
+        }
+    });
+}
+
+async function loadOffersAndDeals() {
+    const offersList = document.getElementById('offers-list');
+    const dealsList = document.getElementById('deals-list');
+    
     try {
         const offers = await api.getOffers();
         if (!offers || offers.length === 0) {
-            list.innerHTML = '<p class="empty-state" style="text-align:center; padding:40px 20px; color:var(--text-muted);">No offers available right now. Please check again later.</p>';
+            offersList.innerHTML = '<p class="empty-state">No offers right now.</p>';
+            dealsList.innerHTML = '<p class="empty-state">No brand deals right now.</p>';
             return;
         }
-        list.innerHTML = offers.map(o => `
-            <div class="opp-card" style="position:relative; overflow:hidden;">
-                <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
-                    <img src="${o.image_url || 'https://img.icons8.com/color/48/gift.png'}" alt="${o.provider}" style="width:42px; height:42px; border-radius:10px; object-fit:cover;">
-                    <div style="flex:1; min-width:0;">
-                        <h4 style="margin:0; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${o.title}</h4>
-                        <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">${o.provider}</p>
+
+        // Split offers into two sets for the two horizontal scrolls
+        const topOffers = offers.slice(0, 3);
+        const brandDeals = offers.slice(3);
+
+        const renderOfferCard = (o) => `
+            <div class="offer-card">
+                <div class="offer-header">
+                    <div class="offer-logo">
+                        <img src="${o.image_url || 'https://img.icons8.com/color/48/gift.png'}" alt="${o.provider}">
                     </div>
-                    <span class="tag" style="background:rgba(16,185,129,0.12); color:#059669; font-weight:700; font-size:13px; padding:4px 10px; border-radius:6px; white-space:nowrap;">${o.discount} OFF</span>
+                    <div class="offer-info">
+                        <h4>${o.provider}</h4>
+                        <p>${o.title}</p>
+                    </div>
                 </div>
-                <p style="font-size:13px; color:var(--text-muted); margin-bottom:8px; line-height:1.4;">${o.description || ''}</p>
-                <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Valid until: ${o.expiry_date}</p>
-                <button class="btn primary small" onclick="window.open('${o.redirect_url}', '_blank')" style="width:100%;">Claim Offer</button>
+                <div class="cashback-text">${o.discount || '₹50'} Cashback</div>
+                <button class="btn primary" onclick="window.open('${o.redirect_url}', '_blank')" style="padding: 10px; font-size: 13px; border-radius: 12px;">Redeem Now</button>
             </div>
-        `).join('');
+        `;
+
+        offersList.innerHTML = topOffers.map(renderOfferCard).join('');
+        dealsList.innerHTML = brandDeals.map(renderOfferCard).join('');
+
     } catch (e) {
-        list.innerHTML = '<p class="empty-state" style="text-align:center; padding:40px 20px; color:var(--text-muted);">Could not load offers. Please try again later.</p>';
-        console.error(e);
+        console.error("Offers Load error:", e);
     }
 }
 
@@ -310,19 +460,17 @@ async function loadOpportunitiesTab() {
             }
             list.innerHTML = filtered.map(o => {
                 const isJob = o.type === 'job';
-                const tagColor = isJob ? 'rgba(37,99,235,0.1)' : 'rgba(168,85,247,0.1)';
-                const tagTextColor = isJob ? '#2563eb' : '#9333ea';
+                const tagColor = isJob ? '#EEF2FF' : '#F5F3FF';
+                const tagTextColor = isJob ? '#4F46E5' : '#8B5CF6';
                 const tagLabel = isJob ? '💼 Part-Time Job' : '🎓 Scholarship';
-                const icon1 = isJob ? '📍' : '✅';
-                const icon2 = isJob ? '💰' : '📅';
-                const applyUrl = o.apply_url || '#';
+                
                 return `
-                    <div class="opp-card ${o.type}">
-                        <div class="tags"><span class="tag" style="background:${tagColor}; color:${tagTextColor}; font-weight:600;">${tagLabel}</span></div>
-                        <h4 style="margin: 8px 0 6px;">${o.title}</h4>
-                        <p style="font-size:13px; color:var(--text-muted); margin-bottom:4px;">${icon1} ${o.detail_1}</p>
-                        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">${icon2} ${o.detail_2}</p>
-                        <button class="btn primary small" onclick="window.open('${applyUrl}', '_blank')" style="width:100%;">Apply Now</button>
+                    <div class="offer-card">
+                        <div style="background: ${tagColor}; color: ${tagTextColor}; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; align-self: flex-start; margin-bottom: 4px;">${tagLabel}</div>
+                        <h4 style="font-size: 15px; margin-bottom: 8px;">${o.title}</h4>
+                        <p style="font-size: 12px; margin-bottom: 4px;">📍 ${o.detail_1}</p>
+                        <p style="font-size: 12px; margin-bottom: 12px;">💰 ${o.detail_2}</p>
+                        <button class="btn primary" onclick="window.open('${o.apply_url || '#'}', '_blank')" style="padding: 10px; font-size: 13px; border-radius: 12px;">Apply Now</button>
                     </div>
                 `;
             }).join('');
@@ -452,32 +600,29 @@ function showPaymentForm(scannedId) {
     const payFlow = document.getElementById('pay-flow-container');
     payFlow.style.display = 'block';
     
-    // Check if the scanned string is a standard India UPI QR code url
     let displayName = scannedId;
     if (scannedId.toLowerCase().startsWith('upi://')) {
         try {
             const url = new URL(scannedId);
             const params = new URLSearchParams(url.search);
-            // Try to grab Payee Name (pn), fallback to Payee Address (pa)
             displayName = params.get('pn') || params.get('pa') || scannedId;
-            
-            // Clean up + signs occasionally used for spaces in UPI names
             displayName = displayName.replace(/\+/g, ' ');
-        } catch(e) { /* ignore parse errors and use raw string */ }
-    } else if (scannedId.toLowerCase().startsWith('finzen://pay')) {
-        // Feature 4: QR Payment Flow Integration
-        try {
-            const url = new URL(scannedId);
-            const params = new URLSearchParams(url.search);
-            displayName = params.get('receiver') || scannedId;
         } catch(e) {}
     }
     
     const targetInput = document.getElementById('scan-target');
     targetInput.value = displayName;
     
-    document.getElementById('btn-confirm-scan-pay').onclick = () => {
-        handleTransfer('scan-amount', targetInput.value || 'Manual Entry');
+    document.getElementById('btn-confirm-scan-pay').onclick = async () => {
+        const amt = parseFloat(document.getElementById('scan-amount').value);
+        if (!amt || amt <= 0) return showErrorModal('Enter a valid amount');
+        
+        try {
+            const res = await api.transfer(amt, displayName);
+            await updateUIState();
+            showSuccessModal(amt, displayName, "payment", res.transaction_id);
+            hideModal();
+        } catch(e) { showErrorModal(e.message); }
     };
 }
 
@@ -547,7 +692,7 @@ function showReceiveModal() {
 function showAIModal() {
     openModal(`
         <h3>🤖 Ask AI Budget Advisor</h3>
-        <p class="mb-10 text-muted" style="font-size:12px">Powered by Google Gemini</p>
+        <p class="mb-10 text-muted" style="font-size:12px">Powered by Mistral AI</p>
         <div id="ai-chat-history" style="height: 200px; overflow-y:auto; background:#f9fafb; padding:10px; border-radius:12px; margin-bottom:15px; font-size:14px;">
             <p><strong>AI:</strong> Hello! I analyzed your spending. How can I help you save money today?</p>
         </div>
@@ -562,21 +707,26 @@ function showAIModal() {
 
 async function handlePhoneTransfer() {
     const phoneInput = document.getElementById('send-target').value.trim();
+    const amount = parseFloat(document.getElementById('send-amount').value);
     
-    // Feature 1: Phone Validation
-    const digitsOnly = phoneInput.replace(/\D/g, ''); // strip non-numeric
+    const digitsOnly = phoneInput.replace(/\D/g, ''); 
     if (digitsOnly.length < 10) {
-        return showErrorModal('Invalid phone number. Please enter a valid 10-digit phone number.');
+        return showErrorModal('Please enter a valid 10-digit phone number.');
     }
 
-    const amount = parseFloat(document.getElementById('send-amount').value);
     if (!amount || amount <= 0) return showErrorModal('Enter a valid amount');
     
-    try {
-        const res = await api.transfer(amount, phoneInput);
-        loadDashboard(); // Refresh
-        showSuccessModal(amount, phoneInput, "payment", res.transaction_id, res.requires_categorization, res.merchant_name);
-    } catch(e) { showErrorModal(e.message); }
+    // Simulate searching for recipient
+    const recipientName = phoneInput.endsWith('0') ? "Rahul Sharma" : "Priya Singh"; // Mock logic
+    
+    if (confirm(`Confirm payment of ₹${amount} to ${recipientName} (${phoneInput})?`)) {
+        try {
+            const res = await api.transfer(amount, phoneInput);
+            await updateUIState(); 
+            showSuccessModal(amount, recipientName, "payment", res.transaction_id);
+            hideModal();
+        } catch(e) { showErrorModal(e.message); }
+    }
 }
 
 async function handleTransfer(inputId, defaultParty) {
@@ -602,69 +752,75 @@ async function handleSavings(inputId, action) {
     } catch(e) { showErrorModal(e.message); }
 }
 
-function showSuccessModal(amount, target, type="payment", transactionId="", requiresCategorization=false, merchantName=null) {
-    const dateStr = new Date().toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
-    const title = type === "payment" ? "Payment Successful" : "Transfer Successful";
-    const label = type === "payment" ? "Paid to" : "Action";
+function showSuccessModal(amount, target, type="payment", transactionId="") {
+    const successOverlay = document.getElementById('success-overlay');
+    const successMessage = document.getElementById('success-message');
+    const doneBtn = document.getElementById('btn-success-done');
+
+    // Set message
+    successMessage.innerText = `₹${parseFloat(amount).toFixed(2)} ${type === "payment" ? "sent successfully to" : "moved to"} ${target}`;
     
-    const txnHtml = transactionId ? `<p style="margin-top: 10px; font-size: 13px; color: var(--text-muted); padding: 6px; background: rgba(0,0,0,0.03); border-radius: 6px; border: 1px dashed rgba(0,0,0,0.1);">Transaction ID: <strong style="color:var(--text-main)">${transactionId}</strong></p>` : '';
+    // Trigger Confetti (Simple programmatic implementation)
+    createConfetti();
+
+    // Show overlay with premium animation
+    successOverlay.classList.add('active');
+
+    // Handle buttons
+    doneBtn.onclick = () => {
+        successOverlay.classList.remove('active');
+        stopConfetti();
+    };
+
+    document.getElementById('btn-view-tx').onclick = () => {
+        successOverlay.classList.remove('active');
+        stopConfetti();
+        // Scroll to transactions area on dashboard
+        document.getElementById('tx-history').scrollIntoView({ behavior: 'smooth' });
+    };
+}
+
+/**
+ * Premium Celebration Logic
+ */
+function createConfetti() {
+    const container = document.getElementById('confetti-container');
+    container.innerHTML = '';
+    const colors = ['#4F46E5', '#10B981', '#38BDF8', '#F59E0B', '#FFFFFF'];
     
-    // Feature 7: Hook into Done button to conditionally pop category modal
-    let doneAction = `hideModal()`;
-    if (requiresCategorization && transactionId && merchantName) {
-        doneAction = `showCategorySelectionModal('${transactionId}', '${merchantName.replace(/'/g, "\\'")}')`;
+    for (let i = 0; i < 50; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti-piece';
+        confetti.style.cssText = `
+            position: absolute;
+            width: ${Math.random() * 10 + 5}px;
+            height: ${Math.random() * 10 + 5}px;
+            background: ${colors[Math.floor(Math.random() * colors.length)]};
+            left: ${Math.random() * 100}%;
+            top: -10px;
+            opacity: ${Math.random()};
+            transform: rotate(${Math.random() * 360}deg);
+            animation: fall ${Math.random() * 3 + 2}s linear infinite;
+        `;
+        container.appendChild(confetti);
     }
+    
+    // Add dynamic animation keyframes if not already present
+    if (!document.getElementById('confetti-styles')) {
+        const style = document.createElement('style');
+        style.id = 'confetti-styles';
+        style.innerHTML = `
+            @keyframes fall {
+                to { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
 
-    openModal(`
-        <div class="success-modal-content">
-            <div class="fintech-success-wrapper">
-              <div class="glow-bg"></div>
-              <div class="ripple-ring"></div>
-              <div class="sparkles">
-                <div class="sparkle s1">✦</div>
-                <div class="sparkle s2">✦</div>
-                <div class="sparkle s3">✦</div>
-                <div class="sparkle s4">✦</div>
-              </div>
-              <div class="logo-morph-container">
-                <svg class="fz-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                  <defs>
-                    <linearGradient id="z-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#2dd4bf" />
-                      <stop offset="100%" stop-color="#059669" />
-                    </linearGradient>
-                    <linearGradient id="sweep-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stop-color="rgba(255,255,255,0)" />
-                      <stop offset="50%" stop-color="rgba(255,255,255,0.8)" />
-                      <stop offset="100%" stop-color="rgba(255,255,255,0)" />
-                    </linearGradient>
-                    <clipPath id="z-clip">
-                      <path d="M52 30 h 25 v 8 l -15 24 h 15 v 8 h -26 v -8 l 15 -24 h -14 z"/>
-                    </clipPath>
-                  </defs>
-                  <rect width="100" height="100" rx="24" fill="#0B2A5B" class="logo-bg" />
-                  <g class="letters-group">
-                    <path class="fz-f" d="M22 30 h 22 v 8 h -14 v 8 h 11 v 8 h -11 v 16 h -8 z" fill="#ffffff" />
-                    <path class="fz-z" d="M52 30 h 25 v 8 l -15 24 h 15 v 8 h -26 v -8 l 15 -24 h -14 z" fill="url(#z-gradient)" />
-                    <rect class="light-sweep" x="-50" y="0" width="30" height="100" fill="url(#sweep-gradient)" clip-path="url(#z-clip)" transform="skewX(-20)" />
-                  </g>
-                  <path class="success-check" d="M28 52 l 14 14 l 30 -30" fill="none" stroke="#2dd4bf" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </div>
-            </div>
-            
-            <h3 style="margin-top:20px; color:var(--text-main); font-size: 24px;">${title}</h3>
-            <p class="text-muted" style="margin-top:5px; font-size: 14px;">${dateStr}</p>
-            
-            <div class="success-details">
-                <p style="font-size:32px; font-weight:700; color:var(--text-main); margin-bottom:5px;">₹${parseFloat(amount).toFixed(2)}</p>
-                <p style="color:var(--text-muted); font-size: 15px;">${label}: <strong style="color:var(--text-main)">${target}</strong></p>
-                ${txnHtml}
-            </div>
-
-            <button class="btn primary" style="margin-top:20px; background:var(--primary);" onclick="${doneAction}">Done</button>
-        </div>
-    `);
+function stopConfetti() {
+    const container = document.getElementById('confetti-container');
+    if (container) container.innerHTML = '';
 }
 
 function showErrorModal(message) {
@@ -718,38 +874,58 @@ async function submitCategory(transactionId, merchantName) {
     }
 }
 
-async function handleAIChat() {
-    const input = document.getElementById('ai-input');
-    const msg = input.value;
-    if(!msg) return;
+async function handleModernAIChat() {
+    const input = document.getElementById('chat-input');
+    const container = document.getElementById('chat-messages');
+    const msg = input.value.trim();
+    if (!msg) return;
 
-    const historyBox = document.getElementById('ai-chat-history');
-    
-    // Add user message
-    historyBox.innerHTML += `<p style="text-align:right; margin-top:10px;"><strong>You:</strong> ${msg}</p>`;
+    // Append User Message
+    appendMessage('user', msg);
     input.value = '';
-    
-    // Add loading
-    historyBox.innerHTML += `<p id="ai-loading" style="margin-top:10px; color:var(--text-muted)"><em>AI is thinking...</em></p>`;
-    historyBox.scrollTop = historyBox.scrollHeight;
 
+    // Show Typing Indicator
+    const typingId = showTypingIndicator();
+    
     try {
         const response = await api.askAI(msg);
-        document.getElementById('ai-loading').remove();
-        
-        // Format markdown: Bold (**text**)
-        let formattedReply = response.reply.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        
-        // Format markdown: Bullet points (* text)
-        formattedReply = formattedReply.replace(/^\* (.*?)$/gm, '• $1');
-        
-        // Format line breaks (\n)
-        formattedReply = formattedReply.replace(/\n/g, '<br>');
-
-        historyBox.innerHTML += `<div style="margin-top:12px; line-height:1.5; background:white; padding:10px; border-radius:10px; border-left:4px solid var(--primary);"><strong>AI:</strong> ${formattedReply}</div>`;
-    } catch(e) {
-        document.getElementById('ai-loading').remove();
-        historyBox.innerHTML += `<p style="margin-top:10px; color:red;"><strong>Error:</strong> ${e.message || 'Failed to connect to AI.'}</p>`;
+        removeTypingIndicator(typingId);
+        appendMessage('bot', response.reply);
+    } catch (e) {
+        removeTypingIndicator(typingId);
+        appendMessage('bot', "I'm having a bit of trouble connecting to my brain. Please try again later! 🧠");
+        console.error(e);
     }
-    historyBox.scrollTo({ top: historyBox.scrollHeight, behavior: 'smooth' });
+}
+
+function appendMessage(sender, text) {
+    const container = document.getElementById('chat-messages');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `msg ${sender}-msg`;
+    
+    // Simple markdown-ish formatting
+    let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    formattedText = formattedText.replace(/^\* (.*?)$/gm, '• $1');
+    formattedText = formattedText.replace(/\n/g, '<br>');
+
+    msgDiv.innerHTML = `<p>${formattedText}</p>`;
+    container.appendChild(msgDiv);
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+}
+
+function showTypingIndicator() {
+    const container = document.getElementById('chat-messages');
+    const id = 'typing-' + Date.now();
+    const typingDiv = document.createElement('div');
+    typingDiv.id = id;
+    typingDiv.className = 'typing-indicator';
+    typingDiv.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+    container.appendChild(typingDiv);
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    return id;
+}
+
+function removeTypingIndicator(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
 }
